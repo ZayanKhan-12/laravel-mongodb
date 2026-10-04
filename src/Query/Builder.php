@@ -1195,18 +1195,19 @@ class Builder extends BaseBuilder
      */
     protected function performUpdate(array $update, array $options = [])
     {
-        // Update multiple items by default.
-        if (! array_key_exists('multiple', $options)) {
-            $options['multiple'] = true;
-        }
-
         $update = $this->grammar->prepareFieldsForQuery($update);
 
         $options = $this->inheritConnectionOptions($options);
 
         $wheres = $this->compileWheres();
         $wheres = $this->grammar->prepareFieldsForQuery($wheres);
-        $result = $this->collection->updateMany($wheres, $update, $options);
+        // Queryable Encryption forbids multi-document updates, so encrypted
+        // collections must use single-document updates. Unmapped collections
+        // keep the multi-document behavior. The encrypted fields map is keyed
+        // by the logical collection name, without the table prefix.
+        $result = $this->connection->isAutoEncryptionEnabled($this->from)
+            ? $this->collection->updateOne($wheres, $update, $options)
+            : $this->collection->updateMany($wheres, $update, $options);
         if ($result->isAcknowledged()) {
             return $result->getModifiedCount() ?: $result->getUpsertedCount();
         }
@@ -1631,6 +1632,7 @@ class Builder extends BaseBuilder
             'gt', 'lte' => [
                 $where['column'] => ['$' . $where['operator'] => $endOfDay],
             ],
+            default => throw $this->unsupportedDateOperator($where),
         };
     }
 
@@ -1638,7 +1640,7 @@ class Builder extends BaseBuilder
     {
         return [
             '$expr' => [
-                '$' . $where['operator'] => [
+                $this->compileDateOperator($where) => [
                     [
                         '$month' => '$' . $where['column'],
                     ],
@@ -1652,7 +1654,7 @@ class Builder extends BaseBuilder
     {
         return [
             '$expr' => [
-                '$' . $where['operator'] => [
+                $this->compileDateOperator($where) => [
                     [
                         '$dayOfMonth' => '$' . $where['column'],
                     ],
@@ -1666,7 +1668,7 @@ class Builder extends BaseBuilder
     {
         return [
             '$expr' => [
-                '$' . $where['operator'] => [
+                $this->compileDateOperator($where) => [
                     [
                         '$year' => '$' . $where['column'],
                     ],
@@ -1690,7 +1692,7 @@ class Builder extends BaseBuilder
 
         return [
             '$expr' => [
-                '$' . $where['operator'] => [
+                $this->compileDateOperator($where) => [
                     [
                         '$dateToString' => ['date' => '$' . $where['column'], 'format' => $format],
                     ],
@@ -1698,6 +1700,30 @@ class Builder extends BaseBuilder
                 ],
             ],
         ];
+    }
+
+    /**
+     * The aggregation comparison operator for a date-based where, e.g. "$eq".
+     *
+     * Without this, an operator Laravel allows but MongoDB has no equivalent for, such as "like",
+     * would be concatenated into an operator that does not exist, and the server would reject the
+     * whole query.
+     */
+    private function compileDateOperator(array $where): string
+    {
+        return match ($where['operator']) {
+            'eq', 'ne', 'lt', 'lte', 'gt', 'gte' => '$' . $where['operator'],
+            default => throw $this->unsupportedDateOperator($where),
+        };
+    }
+
+    private function unsupportedDateOperator(array $where): InvalidArgumentException
+    {
+        return new InvalidArgumentException(sprintf(
+            'Unsupported operator "%s" for where%s(), supported operators are: =, !=, <, <=, >, >=',
+            $where['operator'],
+            $where['type'],
+        ));
     }
 
     protected function compileWhereRaw(array $where): mixed
