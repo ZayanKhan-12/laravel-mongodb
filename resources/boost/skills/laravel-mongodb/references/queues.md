@@ -63,6 +63,8 @@ php artisan queue:failed
 php artisan queue:retry all
 ```
 
+`queue:retry all` and `queue:retry --queue=<name>` load ids from the failed-job provider and use each id as an array key. When `failed.driver` is `mongodb` or `database` and that connection uses the MongoDB driver, the package registers `MongoDB\Laravel\Queue\Failed\MongoFailedJobProvider`, so `ids()` returns strings. `database-uuids` is left unchanged; it already plucks the string `uuid` column.
+
 ## Job class
 
 ```php

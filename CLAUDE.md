@@ -72,6 +72,9 @@ Tests tagged `@group atlas-search` need a MongoDB Atlas (or Atlas Local) deploym
   converters on the query builder via `Query\Builder::setKeyCasts()`.
 - Operator documents (`['$ne' => ...]`) are rejected as `_id` or relation key values to prevent
   MQL injection; see `Query\Builder::assertKeyIsNotOperator()`.
+- `queue:retry` uses each failed-job id as an array key. On a MongoDB connection the package
+  replaces Laravel's `DatabaseFailedJobProvider` with `Queue\Failed\MongoFailedJobProvider`, whose
+  `ids()` returns strings. `database-uuids` is left as-is because it already plucks the string `uuid`.
 - `embedsOne()` and `embedsMany()` build the relation query with `newQueryWithoutRelationships()`,
   so a parent `$with` or `$withCount` is not applied to embedded models. `EmbedsOneOrMany::match()`
   must not call `setParentRelation()` on the parent models it eager-loads. Embedded children get
